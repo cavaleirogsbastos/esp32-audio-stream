@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Microfone para ESP32</title>
+</head>
+<body>
+    <h1>Microfone para ESP32</h1>
+    <button onclick="startAudio()">Iniciar</button>
+    <button onclick="stopAudio()">Parar</button>
+
+    <script>
+        let socket;
+        let audioContext;
+        let processor;
+
+        async function startAudio() {
+            try {
+                if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                    throw new Error("Seu navegador não suporta captura de áudio.");
+                }
+
+                if (!audioContext) {
+                    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                }
+
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                socket = new WebSocket("ws://192.168.0.115:81");
+                socket.binaryType = "arraybuffer";
+                socket.onopen = () => console.log("WebSocket conectado!");
+
+                let source = audioContext.createMediaStreamSource(stream);
+                processor = audioContext.createScriptProcessor(1024, 1, 1);
+
+                source.connect(processor);
+                processor.connect(audioContext.destination);
+
+                processor.onaudioprocess = e => {
+                    if (socket.readyState === WebSocket.OPEN) {
+                        let audioData = e.inputBuffer.getChannelData(0);
+                        let pcmData = new Uint8Array(audioData.length);
+                        for (let i = 0; i < audioData.length; i++) {
+                            pcmData[i] = Math.min(255, Math.max(0, (audioData[i] * 127) + 128));
+                        }
+                        socket.send(pcmData);
+                    }
+                };
+            } catch (err) {
+                console.error("Erro ao acessar o microfone:", err);
+                alert("Erro: " + err.message);
+            }
+        }
+
+        function stopAudio() {
+            if (processor) processor.disconnect();
+            if (audioContext) audioContext.close();
+            if (socket) socket.close();
+        }
+    </script>
+</body>
+</html>
